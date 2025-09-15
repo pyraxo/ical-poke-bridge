@@ -98,6 +98,63 @@ Your server will be available at `https://your-service-name.onrender.com/mcp` (N
 
 If you run into persistent issues of Poke not calling the right MCP (e.g. after you've renamed the connection), you may send `clearhistory` to Poke to delete all message history and start fresh.
 
+## HTTP Request Format (For AI Agents)
+
+**📡 CRITICAL: All tool calls must use this exact format to avoid 400/406 errors:**
+
+### Required Headers
+```json
+{
+    "Content-Type": "application/json",
+    "Accept": "application/json, text/event-stream"
+}
+```
+
+### Request Body Format (JSON-RPC 2.0 - REQUIRED)
+```json
+{
+    "jsonrpc": "2.0",
+    "id": 1,
+    "method": "tools/call",
+    "params": {
+        "name": "tool_name_here",
+        "arguments": {
+            "param1": "value1",
+            "param2": "value2"
+        }
+    }
+}
+```
+
+**⚠️ CRITICAL:** All requests MUST include `jsonrpc: "2.0"` and `id` fields or you'll get 400 errors!
+
+### Example: List Events
+```bash
+curl -X POST https://your-server.onrender.com/mcp \
+  -H "Content-Type: application/json" \
+  -H "Accept: application/json, text/event-stream" \
+  -d '{
+    "jsonrpc": "2.0",
+    "id": 1,
+    "method": "tools/call",
+    "params": {
+        "name": "list_my_events",
+        "arguments": {
+            "calendar_name": "Work",
+            "limit": 5
+        }
+    }
+}'
+```
+
+### Response Format
+The server responds with **Server-Sent Events** format:
+```
+data: {"jsonrpc": "2.0", "id": 1, "result": {"success": true, "events": [...]}}
+```
+
+**⚠️  IMPORTANT:** The response body is prefixed with `data: ` - AI agents must parse this correctly!
+
 ## Usage Examples
 
 Once connected to Poke, you can ask things like:
