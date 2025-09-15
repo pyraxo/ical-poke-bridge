@@ -11,8 +11,7 @@
 
 > **⚠️ Important Notes**
 > - **Apple App-Specific Password Required**: This server requires an Apple App-Specific Password, not your main Apple ID password
-> - **iCloud CalDAV Limitations**: Some operations (like alarm modifications) have limitations due to iCloud's CalDAV complexities. Work in progress.
-> - **Date Range Best Practices**: Always use multi-day date ranges (minimum 2 days) when searching for events due issues with CalDAV.
+> - **iCloud CalDAV Limitations**: Some operations (like reminder modifications) have limitations due to iCloud's CalDAV complexities. Work in progress.
 
 ## 🚀 Quick Start
 
@@ -24,7 +23,7 @@
 ## 🌟 Features
 
 - 📅 **Full Calendar Access** - List, create, update, and delete iCloud calendar events
-- ⏰ **Alarm Management** - Create events with multiple alarms and notifications
+- ⏰ **Event Reminder Management** - Create events with multiple alarms and notifications
 - 🔍 **Search** - Find events across all calendars with flexible date ranges
 - 🌐 **Timezone Support** - Handle events in any timezone with proper conversion
 - 🛡️ **Secure** - Uses Apple App-Specific Passwords for enhanced security
