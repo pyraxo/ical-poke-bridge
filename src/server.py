@@ -116,8 +116,9 @@ def _find_calendar(principal: object, *, calendar_url: Optional[str], calendar_n
     raise ValueError("No calendars found for this account.")
 
 
-@mcp.tool(description="List the user's iCloud calendars. Provide email and password.")
-def list_calendars(email: str, password: str) -> List[Dict[str, str]]:
+@mcp.tool(description="List your iCloud calendars using environment variables (ICLOUD_EMAIL, ICLOUD_PASSWORD).")
+def list_calendars() -> List[Dict[str, str]]:
+    email, password = _get_env_credentials()
     client, principal = _connect(email, password)
     calendars = principal.calendars()
     results: List[Dict[str, str]] = []
@@ -132,16 +133,16 @@ def list_calendars(email: str, password: str) -> List[Dict[str, str]]:
 @mcp.tool(description=(
     "List events in a calendar between start and end (ISO). "
     "Specify either calendar_url or calendar_name; if neither is provided, the first calendar is used. "
-    "Dates accept YYYY-MM-DD or full ISO-8601; defaults to past 7 days through next 30 days."
+    "Dates accept YYYY-MM-DD or full ISO-8601; defaults to past 7 days through next 30 days. "
+    "Uses ICLOUD_EMAIL and ICLOUD_PASSWORD from environment."
 ))
 def list_events(
-    email: str,
-    password: str,
     start: Optional[str] = None,
     end: Optional[str] = None,
     calendar_url: Optional[str] = None,
     calendar_name: Optional[str] = None
 ) -> List[Dict[str, Optional[str]]]:
+    email, password = _get_env_credentials()
     client, principal = _connect(email, password)
     cal = _find_calendar(principal, calendar_url=calendar_url, calendar_name=calendar_name)
 
@@ -175,7 +176,6 @@ def list_events(
                 "end": _dt_to_iso(dtend_val)
             })
         except Exception:
-            # If parsing fails, still return the URL at least
             results.append({
                 "url": str(getattr(ev, "url", "")),
                 "uid": None,
@@ -188,11 +188,10 @@ def list_events(
 
 @mcp.tool(description=(
     "Create an event in the specified calendar. Provide ISO datetimes or YYYY-MM-DD for all-day. "
-    "Specify either calendar_url or calendar_name; if neither is provided, the first calendar is used."
+    "Specify either calendar_url or calendar_name; if neither is provided, the first calendar is used. "
+    "Uses ICLOUD_EMAIL and ICLOUD_PASSWORD from environment."
 ))
 def create_event(
-    email: str,
-    password: str,
     summary: str,
     start: str,
     end: str,
@@ -202,6 +201,7 @@ def create_event(
     location: Optional[str] = None,
     all_day: bool = False
 ) -> Dict[str, str]:
+    email, password = _get_env_credentials()
     client, principal = _connect(email, password)
     cal = _find_calendar(principal, calendar_url=calendar_url, calendar_name=calendar_name)
 
@@ -257,8 +257,9 @@ def create_event(
         raise RuntimeError(f"Failed to create event: {e}")
 
 
-@mcp.tool(description="Delete an event by its CalDAV event URL.")
-def delete_event(email: str, password: str, event_url: str) -> Dict[str, str]:
+@mcp.tool(description="Delete an event by its CalDAV event URL. Uses ICLOUD_EMAIL and ICLOUD_PASSWORD from environment.")
+def delete_event(event_url: str) -> Dict[str, str]:
+    email, password = _get_env_credentials()
     client, principal = _connect(email, password)
     try:
         ev = caldav.Event(client=client, url=event_url)
