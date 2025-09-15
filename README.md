@@ -35,7 +35,7 @@
 Before starting, you'll need:
 - An [Apple ID](https://appleid.apple.com) with iCloud calendar enabled
 - A [Render](https://render.com) account (for deployment) or VPS
-- A [Poke](https://poke.com) account (optional, for AI agent integration)
+- A [Poke](https://poke.com) account
 
 ### 2. Get Apple App-Specific Password
 
