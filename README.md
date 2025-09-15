@@ -1,100 +1,189 @@
-# iCloud CalDAV MCP Server
-
-A [FastMCP](https://github.com/jlowin/fastmcp) server that connects to your iCloud calendar via CalDAV. Deploy to Render with just your iCloud credentials as environment variables.
+<div align="center">
+  <img width="120" height="120" src="/assets/logo.png" alt="iCloud CalDAV MCP Server Logo">
+  <h1><b>iCloud CalDAV MCP Server</b></h1>
+  <p>
+    An experimental <strong>iCloud calendar integration</strong> for Poke using <a href="https://github.com/jlowin/fastmcp">FastMCP</a> that provides seamless CalDAV access to your iCloud calendars with full CRUD operations and alarm management.
+  </p>
+  <p><em>Built for the <a href="https://poke.com">Poke</a> ecosystem and compatible with any MCP-enabled AI agent.</em></p>
+</div>
 
 [![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/josejacas/iCal-Poke-Bridge)
 
-## Local Development
+> **⚠️ Important Notes**
+> - **Apple App-Specific Password Required**: This server requires an Apple App-Specific Password, not your main Apple ID password
+> - **iCloud CalDAV Limitations**: Some operations (like alarm modifications) have limitations due to iCloud's CalDAV complexities. Work in progress.
+> - **Date Range Best Practices**: Always use multi-day date ranges (minimum 2 days) when searching for events due issues with CalDAV.
 
-### Setup
+## 🚀 Quick Start
 
-Fork the repo, then run:
+1. **Deploy**: Click the "Deploy to Render" button above
+2. **Configure**: Set your iCloud app specific credentials as environment variables
+3. **Connect**: Add to Poke at [poke.com/settings/connections](https://poke.com/settings/connections)
+4. **Test**: Ask Poke to check your calendar!
+
+## 🌟 Features
+
+- 📅 **Full Calendar Access** - List, create, update, and delete iCloud calendar events
+- ⏰ **Alarm Management** - Create events with multiple alarms and notifications
+- 🔍 **Search** - Find events across all calendars with flexible date ranges
+- 🌐 **Timezone Support** - Handle events in any timezone with proper conversion
+- 🛡️ **Secure** - Uses Apple App-Specific Passwords for enhanced security
+
+## 📋 Complete Setup Guide
+
+### 1. Prerequisites
+
+Before starting, you'll need:
+- An [Apple ID](https://appleid.apple.com) with iCloud calendar enabled
+- A [Render](https://render.com) account (for deployment) or VPS
+- A [Poke](https://poke.com) account (optional, for AI agent integration)
+
+### 2. Get Apple App-Specific Password
+
+1. Go to [account.apple.com](https://account.apple.com) and sign in
+2. Navigate to **Sign-In and Security** → **App-Specific Passwords**
+3. Click **Generate an app-specific password**
+4. Enter a label like "iCloud CalDAV MCP Server"
+5. **Copy the generated password** - you won't be able to see it again!
+
+### 3. Deploy the Server
+
+#### Option A: One-Click Deploy to Render (Recommended)
+1. Click the "Deploy to Render" button above
+2. Connect your GitHub account to Render
+3. Fork the repository when prompted
+4. Configure environment variables (see next step)
+
+#### Option B: VPS Deployment (Best Performance)
+```bash
+# On your VPS (Ubuntu/Debian):
+git clone https://github.com/your-username/icloud-caldav-mcp.git
+cd icloud-caldav-mcp
+sudo apt update && sudo apt install python3-pip
+pip3 install -r requirements.txt
+
+# Set environment variables
+export ICLOUD_EMAIL="your-email@icloud.com"
+export ICLOUD_PASSWORD="your-app-specific-password"
+
+# Run the server
+python3 src/server.py
+```
+
+### 4. Configure Environment Variables
+
+Set these in your Render dashboard or VPS:
 
 ```bash
-git clone <your-repo-url>
-cd iCal-Poke-Bridge
-conda create -n mcp-server python=3.13
-conda activate mcp-server
+# Required - iCloud Credentials
+ICLOUD_EMAIL=your-email@icloud.com
+ICLOUD_PASSWORD=your-16-character-app-specific-password
+
+# Optional - Server Configuration
+PORT=8000
+ENVIRONMENT=production
+```
+
+### 5. Connect to Poke
+
+1. Go to [poke.com/settings/connections](https://poke.com/settings/connections)
+2. Add a new MCP server:
+   - **MCP Name**: `iCloud Calendar` (or any name you prefer)
+   - **Server URL**: `https://your-render-app-name.onrender.com/mcp`
+   - **Transport**: Streamable HTTP
+3. Test the connection by asking Poke: `"Check my icloud calendar connection status"`
+
+## 🛠️ Local Development
+
+### Setup Development Environment
+
+```bash
+# Clone the repository
+git clone https://github.com/your-username/icloud-caldav-mcp.git
+cd icloud-caldav-mcp
+
+# Create virtual environment
+conda create -n icloud-mcp python=3.13
+conda activate icloud-mcp
+
+# Install dependencies
 pip install -r requirements.txt
+
+# Set environment variables
+export ICLOUD_EMAIL="your-email@icloud.com"
+export ICLOUD_PASSWORD="your-app-specific-password"
 ```
 
-### Environment Variables
-
-Set your iCloud credentials as environment variables:
+### Run Locally
 
 ```bash
-ICLOUD_EMAIL="your-email@icloud.com"
-ICLOUD_PASSWORD="your-app-specific-password"
-```
-
-**Important:** Use an [Apple App-Specific Password](https://support.apple.com/en-us/HT204397), not your main Apple ID password.
-
-### Test
-
-```bash
+# Start the server
 python src/server.py
-# then in another terminal run:
+
+# In another terminal, test with MCP Inspector
 npx @modelcontextprotocol/inspector
 ```
 
-Open http://localhost:3000 and connect to `http://localhost:8000/mcp` using "Streamable HTTP" transport (NOTE THE `/mcp`!).
+Open http://localhost:3000 and connect to `http://localhost:8000/mcp` using "Streamable HTTP" transport.
 
-### Available Tools
+## 🛠️ Available Tools & Capabilities
 
-**Main tools:**
-- `list_my_calendars()` - List all your calendars
-- `list_my_events(start?, end?, calendar_name?)` - List events ⚠️ Use 2-7 day ranges minimum
-- `create_my_event(summary, start, end, calendar_name?, description?, location?, all_day?, alarm_configs?)` - Create an event with optional alarms
-- `update_my_event(event_url?, uid?, summary?, start?, end?, ...)` - Update an existing event
-- `delete_my_event(event_url)` - Delete an event
-- `list_event_alarms(event_url?, uid?)` - List alarms for an event
-- `get_connection_status()` - Check iCloud connection
+| Tool Name | Description | Example Usage |
+|-----------|-------------|---------------|
+| `get_connection_status` | Test iCloud CalDAV connection | Connection Testing |
+| `list_my_calendars` | List all your calendars | "Show me all my calendars" |
+| `list_my_events` | List events with date range ⚠️ Use 2 day minimum | "What events do I have this week?" |
+| `create_my_event` | Create events with alarms | "Create a meeting tomorrow at 2pm" |
+| `update_my_event` | Update existing events | "Change my meeting title to 'Team Sync'" |
+| `delete_my_event` | Delete events | "Cancel my dentist appointment" |
+| `list_event_alarms` | List alarms for an event | "What reminders do I have set?" |
 
-## Deployment
+### Example Poke Commands
 
-### Prerequisites
+Ask Poke questions like:
+- "What events do I have this week?"
+- "Create a dentist appointment for next Tuesday at 3pm with a 30-minute reminder"
+- "Change my 'Meeting' event title to 'Team Standup'"
+- "Show me all my calendars"
+- "Delete the event called 'Old Meeting'"
+- "What alarms are set for my doctor appointment?"
 
-1. **Apple App-Specific Password**: Generate one at [appleid.apple.com](https://appleid.apple.com) → Sign-In and Security → App-Specific Passwords
-2. **GitHub Account**: Fork this repository to your GitHub account
+## 🏗️ Project Structure
 
-### Option 1: One-Click Deploy
-1. Click the "Deploy to Render" button above
-2. Connect your GitHub account to Render
-3. Select your forked repository
-4. **Set Environment Variables**:
-   - `ICLOUD_EMAIL`: Your iCloud email address
-   - `ICLOUD_PASSWORD`: Your Apple app-specific password (not your main password!)
-5. Click "Deploy Web Service"
+```
+icloud-caldav-mcp/
+├── src/                          # Main application code
+│   ├── server.py                 # FastMCP server and MCP tools
+│   ├── caldav_client.py         # CalDAV client for iCloud
+│   ├── ical_utils.py            # iCalendar utilities
+│   └── __init__.py
+├── assets/                       # Static assets
+│   └── logo.png                  # Logo image
+├── requirements.txt              # Python dependencies
+├── render.yaml                   # Render deployment config
+└── README.md                     # This file
+```
 
-### Option 2: Manual Deployment
-1. Fork this repository
-2. Connect your GitHub account to Render
-3. Create a new Web Service on Render
-4. Connect your forked repository
-5. **Set Environment Variables**:
-   - `ICLOUD_EMAIL`: Your iCloud email address  
-   - `ICLOUD_PASSWORD`: Your Apple app-specific password
-6. Render will automatically detect the `render.yaml` configuration
+## 🔧 Customization
 
-Your server will be available at `https://your-service-name.onrender.com/mcp` (NOTE THE `/mcp`!)
+### Adding New MCP Tools
 
-### Security Notes
-- ✅ Your credentials are encrypted at rest in Render's environment variables
-- ✅ Use Apple App-Specific Passwords (not your main Apple ID password)
-- ✅ Each deployment is isolated to your own iCloud account
-- ✅ No calendar data is stored on the server
+Add new tools by decorating functions with `@mcp.tool`:
 
-## Poke Setup
+```python
+@mcp.tool
+def create_recurring_event(summary: str, start: str, rrule: str) -> dict:
+    """Create a recurring calendar event."""
+    # Implementation here
+    return {"success": True, "event_url": "..."}
+```
 
-1. Deploy your server to Render (see Deployment section above)
-2. Go to [poke.com/settings/connections](https://poke.com/settings/connections)
-3. Add a new MCP connection:
-   - **Name**: "iCloud Calendar" (or whatever you prefer)
-   - **URL**: `https://your-service-name.onrender.com/mcp`
-   - **Transport**: Streamable HTTP
-4. Test the connection by asking Poke: `Tell the subagent to use the "iCloud Calendar" integration's "get_connection_status" tool`
+## 🚀 Future Enhancements
 
-If you run into persistent issues of Poke not calling the right MCP (e.g. after you've renamed the connection), you may send `clearhistory` to Poke to delete all message history and start fresh.
+Potential improvements for future versions:
+
+- **Recurrence**: Recurring event patterns
+- **Actual Alarm Support**: Proper implementation of adding/editing/removing event alarms
 
 ## HTTP Request Format (For AI Agents)
 
@@ -155,40 +244,27 @@ data: {"jsonrpc": "2.0", "id": 1, "result": {"success": true, "events": [...]}}
 
 **⚠️  IMPORTANT:** The response body is prefixed with `data: ` - AI agents must parse this correctly!
 
-## Usage Examples
+## 🔍 Troubleshooting
 
-Once connected to Poke, you can ask things like:
-- "What events do I have this week?" (uses `list_my_events` with proper date range)
-- "Create a meeting tomorrow at 2pm for 1 hour called 'Team Standup'" (uses `create_my_event`)
-- "Add a 15-minute reminder to my dentist appointment" (finds event, then recreates with alarm)
-- "Change my meeting title from 'Standup' to 'Daily Sync'" (uses `update_my_event`)
-- "Show me all my calendars" (uses `list_my_calendars`)
-- "Delete my meeting with John tomorrow" (Poke finds the event via `list_my_events`, then uses `delete_my_event`)
+### Connection Issues
+- ❌ **"Failed to connect to CalDAV server"**
+  - ✅ Verify your Apple App-Specific Password is correct (16 characters)
+  - ✅ Check that 2FA is enabled on your Apple ID
+  - ✅ Ensure your iCloud email is exactly correct
+  - ✅ Try generating a new App-Specific Password
 
-### Important Notes:
-- **Always use multi-day date ranges** (minimum 2-7 days) when searching for events due to iCloud CalDAV limitations
-- **For alarm modifications**: Use delete + recreate pattern since iCloud CalDAV doesn't reliably support alarm updates on existing events (or I havent been able to get them to work)
+### Server Issues  
+- ❌ **Server won't start**
+  - ✅ Check Render/VPS logs for startup errors
+  - ✅ Verify environment variables are set correctly
+  - ✅ Ensure Python dependencies are installed
 
-## Customization
+### AI Agent Issues
+- ❌ **"400 Bad Request" errors**
+  - ✅ Ensure JSON-RPC 2.0 format with `jsonrpc` and `id` fields
+  - ✅ Use correct headers: `Content-Type: application/json`
+  - ✅ Check the endpoint URL includes `/mcp`
 
-Add more tools by decorating functions with `@mcp.tool`:
-
-```python
-@mcp.tool
-def my_custom_tool(param1: str, param2: int) -> str:
-    """Description of what this tool does."""
-    # Your implementation here
-    return "result"
-```
-
-## Troubleshooting
-
-**Connection Issues:**
-- Verify your Apple App-Specific Password is correct
-- Check that 2FA is enabled on your Apple ID
-- Ensure your iCloud email is correct
-
-**Server Issues:**
-- Check Render logs for startup errors
-- Use `get_connection_status` tool to test connectivity
-- Verify environment variables are set correctly in Render dashboard
+- ❌ **Events not found after creation**
+  - ✅ Use broader date ranges (minimum 2 days)
+  - ✅ Search across all calendars if unsure
