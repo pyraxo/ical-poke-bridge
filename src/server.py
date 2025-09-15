@@ -300,7 +300,48 @@ def list_my_events(
     
     if calendar_name:
         # Search specific calendar
-        return list_events(email, password, start, end, calendar_name=calendar_name)
+        client, principal = _connect(email, password)
+        start_dt = _parse_iso_datetime(start) or (datetime.now(timezone.utc) - timedelta(days=7))
+        end_dt = _parse_iso_datetime(end) or (datetime.now(timezone.utc) + timedelta(days=30))
+        cal = _find_calendar(principal, calendar_url=None, calendar_name=calendar_name)
+        events = cal.date_search(start_dt, end_dt)
+        results: List[Dict[str, Optional[str]]] = []
+        for ev in events:
+            try:
+                ics = ev.data
+                cal_ics = IcsCalendar.from_ical(ics)
+                summary = None
+                dtstart_val = None
+                dtend_val = None
+                uid_val = None
+                for comp in cal_ics.walk('vevent'):
+                    if comp.get('summary') is not None and summary is None:
+                        summary = str(comp.get('summary'))
+                    if comp.get('uid') is not None and uid_val is None:
+                        uid_val = str(comp.get('uid'))
+                    if comp.get('dtstart') is not None and dtstart_val is None:
+                        dtstart_val = comp.get('dtstart').dt
+                    if comp.get('dtend') is not None and dtend_val is None:
+                        dtend_val = comp.get('dtend').dt
+                results.append({
+                    "calendar_name": calendar_name,
+                    "url": str(getattr(ev, "url", "")),
+                    "uid": uid_val,
+                    "summary": summary,
+                    "start": _dt_to_iso(dtstart_val),
+                    "end": _dt_to_iso(dtend_val)
+                })
+            except Exception:
+                # If parsing fails, still return the URL at least
+                results.append({
+                    "calendar_name": calendar_name,
+                    "url": str(getattr(ev, "url", "")),
+                    "uid": None,
+                    "summary": None,
+                    "start": None,
+                    "end": None
+                })
+        return results
     else:
         # Search all calendars
         client, principal = _connect(email, password)
