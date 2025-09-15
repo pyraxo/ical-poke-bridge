@@ -130,60 +130,7 @@ def list_calendars() -> List[Dict[str, str]]:
     return results
 
 
-@mcp.tool(description=(
-    "List events in a calendar between start and end (ISO). "
-    "Specify either calendar_url or calendar_name; if neither is provided, the first calendar is used. "
-    "Dates accept YYYY-MM-DD or full ISO-8601; defaults to past 7 days through next 30 days. "
-    "Uses ICLOUD_EMAIL and ICLOUD_PASSWORD from environment."
-))
-def list_events(
-    start: Optional[str] = None,
-    end: Optional[str] = None,
-    calendar_url: Optional[str] = None,
-    calendar_name: Optional[str] = None
-) -> List[Dict[str, Optional[str]]]:
-    email, password = _get_env_credentials()
-    client, principal = _connect(email, password)
-    cal = _find_calendar(principal, calendar_url=calendar_url, calendar_name=calendar_name)
-
-    start_dt = _parse_iso_datetime(start) or (datetime.now(timezone.utc) - timedelta(days=7))
-    end_dt = _parse_iso_datetime(end) or (datetime.now(timezone.utc) + timedelta(days=30))
-
-    events = cal.date_search(start_dt, end_dt)
-    results: List[Dict[str, Optional[str]]] = []
-    for ev in events:
-        try:
-            ics = ev.data  # fetch ICS
-            cal_ics = IcsCalendar.from_ical(ics)
-            summary = None
-            dtstart_val = None
-            dtend_val = None
-            uid_val = None
-            for comp in cal_ics.walk('vevent'):
-                if comp.get('summary') is not None and summary is None:
-                    summary = str(comp.get('summary'))
-                if comp.get('uid') is not None and uid_val is None:
-                    uid_val = str(comp.get('uid'))
-                if comp.get('dtstart') is not None and dtstart_val is None:
-                    dtstart_val = comp.get('dtstart').dt
-                if comp.get('dtend') is not None and dtend_val is None:
-                    dtend_val = comp.get('dtend').dt
-            results.append({
-                "url": str(getattr(ev, "url", "")),
-                "uid": uid_val,
-                "summary": summary,
-                "start": _dt_to_iso(dtstart_val),
-                "end": _dt_to_iso(dtend_val)
-            })
-        except Exception:
-            results.append({
-                "url": str(getattr(ev, "url", "")),
-                "uid": None,
-                "summary": None,
-                "start": None,
-                "end": None
-            })
-    return results
+ 
 
 
 @mcp.tool(description=(

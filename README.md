@@ -23,8 +23,8 @@ pip install -r requirements.txt
 Set your iCloud credentials as environment variables:
 
 ```bash
-export ICLOUD_EMAIL="your-email@icloud.com"
-export ICLOUD_PASSWORD="your-app-specific-password"
+ICLOUD_EMAIL="your-email@icloud.com"
+ICLOUD_PASSWORD="your-app-specific-password"
 ```
 
 **Important:** Use an [Apple App-Specific Password](https://support.apple.com/en-us/HT204397), not your main Apple ID password.
@@ -48,11 +48,10 @@ Open http://localhost:3000 and connect to `http://localhost:8000/mcp` using "Str
 - `delete_my_event(event_url)` - Delete an event
 - `get_connection_status()` - Check iCloud connection
 
-**Original tools (with explicit credentials):**
-- `list_calendars(email, password)` - List calendars with explicit credentials
-- `list_events(email, password, start?, end?, calendar_url?, calendar_name?)` - List events with explicit credentials
-- `create_event(email, password, summary, start, end, ...)` - Create event with explicit credentials
-- `delete_event(email, password, event_url)` - Delete event with explicit credentials
+**Advanced tools (env-based auth):**
+- `list_calendars()` - List calendars using environment credentials
+- `create_event(summary, start, end, calendar_url?, calendar_name?, ...)` - Create event using environment credentials
+- `delete_event(event_url)` - Delete event using environment credentials
 
 ## Deployment
 
