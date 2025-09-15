@@ -41,16 +41,14 @@ Open http://localhost:3000 and connect to `http://localhost:8000/mcp` using "Str
 
 ### Available Tools
 
-**Simplified tools (using environment variables):**
+**Main tools:**
 - `list_my_calendars()` - List all your calendars
-- `list_my_events(start?, end?, calendar_name?)` - List events (searches ALL calendars if no calendar specified)
-- `create_my_event(summary, start, end, calendar_name?, description?, location?, all_day?)` - Create an event
+- `list_my_events(start?, end?, calendar_name?)` - List events ⚠️ Use 2-7 day ranges minimum
+- `create_my_event(summary, start, end, calendar_name?, description?, location?, all_day?, alarm_configs?)` - Create an event with optional alarms
+- `update_my_event(event_url?, uid?, summary?, start?, end?, ...)` - Update an existing event
 - `delete_my_event(event_url)` - Delete an event
+- `list_event_alarms(event_url?, uid?)` - List alarms for an event
 - `get_connection_status()` - Check iCloud connection
-
-**Advanced tools (env-based auth):**
-- `create_event(summary, start, end, calendar_url?, calendar_name?, ...)` - Create event using environment credentials
-- `delete_event(event_url)` - Delete event using environment credentials
 
 ## Deployment
 
@@ -141,6 +139,8 @@ curl -X POST https://your-server.onrender.com/mcp \
         "name": "list_my_events",
         "arguments": {
             "calendar_name": "Work",
+            "start": "2025-09-01",
+            "end": "2025-09-07",
             "limit": 5
         }
     }
@@ -158,11 +158,16 @@ data: {"jsonrpc": "2.0", "id": 1, "result": {"success": true, "events": [...]}}
 ## Usage Examples
 
 Once connected to Poke, you can ask things like:
-- "What events do I have today?" (uses `list_my_events`)
+- "What events do I have this week?" (uses `list_my_events` with proper date range)
 - "Create a meeting tomorrow at 2pm for 1 hour called 'Team Standup'" (uses `create_my_event`)
+- "Add a 15-minute reminder to my dentist appointment" (finds event, then recreates with alarm)
+- "Change my meeting title from 'Standup' to 'Daily Sync'" (uses `update_my_event`)
 - "Show me all my calendars" (uses `list_my_calendars`)
 - "Delete my meeting with John tomorrow" (Poke finds the event via `list_my_events`, then uses `delete_my_event`)
-- "Cancel the dentist appointment next week" (Poke searches for and deletes the specific event)
+
+### Important Notes:
+- **Always use multi-day date ranges** (minimum 2-7 days) when searching for events due to iCloud CalDAV limitations
+- **For alarm modifications**: Use delete + recreate pattern since iCloud CalDAV doesn't reliably support alarm updates on existing events (or I havent been able to get them to work)
 
 ## Customization
 
