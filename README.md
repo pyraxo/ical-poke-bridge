@@ -4,9 +4,8 @@
   <p>
     An experimental <strong>iCloud calendar integration</strong> for Poke using <a href="https://github.com/jlowin/fastmcp">FastMCP</a> that provides seamless CalDAV access to your iCloud calendars with full CRUD operations and alarm management.
   </p>
-  <p><em>Built for the <a href="https://poke.com">Poke</a> ecosystem and compatible with any MCP-enabled AI agent.</em></p>
-</div>
-
+  <p><em>Built for <a href="https://poke.com">Poke</a> but should work with other agents.</em></p>
+</div><br><br>
 
 
 
