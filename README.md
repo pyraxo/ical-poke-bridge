@@ -106,7 +106,8 @@ Once connected to Poke, you can ask things like:
 - "What events do I have today?" (uses `list_my_events`)
 - "Create a meeting tomorrow at 2pm for 1 hour called 'Team Standup'" (uses `create_my_event`)
 - "Show me all my calendars" (uses `list_my_calendars`)
-- "Delete the event with URL [event_url]" (uses `delete_my_event`)
+- "Delete my meeting with John tomorrow" (Poke finds the event via `list_my_events`, then uses `delete_my_event`)
+- "Cancel the dentist appointment next week" (Poke searches for and deletes the specific event)
 
 ## Customization
 

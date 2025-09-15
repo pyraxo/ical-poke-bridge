@@ -399,7 +399,7 @@ def get_connection_status() -> Dict[str, str]:
 
 @mcp.tool(description="Greet a user by name with a welcome message from the MCP server")
 def greet(name: str) -> str:
-    return f"Hello, {name}! Welcome to the iCloud CalDAV MCP server."
+    return f"Hello, {name}! Welcome to the iCloud Poke CalDAV MCP server."
 
 
 @mcp.tool(description="Get information about the MCP server including name, version, environment, and Python version")
