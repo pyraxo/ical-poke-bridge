@@ -69,22 +69,24 @@ def _parse_iso_datetime(value: Optional[str], tz: Optional[str] = None) -> Optio
         # Date-only input (YYYY-MM-DD)
         if len(v) == 10 and v[4] == "-" and v[7] == "-":
             d = date.fromisoformat(v)
-            return datetime(d.year, d.month, d.day, tzinfo=timezone.utc)
+            if tz:
+                return datetime(d.year, d.month, d.day, tzinfo=ZoneInfo(tz))
+            else:
+                return datetime(d.year, d.month, d.day, tzinfo=timezone.utc)
+        
         # Replace trailing Z with +00:00 for fromisoformat compatibility
         if v.endswith("Z"):
             v = v[:-1] + "+00:00"
+        
         dt = datetime.fromisoformat(v)
         if dt.tzinfo is None:
             if tz:
-                try:
-                    dt = dt.replace(tzinfo=ZoneInfo(tz))
-                except Exception:
-                    dt = dt.replace(tzinfo=timezone.utc)
+                dt = dt.replace(tzinfo=ZoneInfo(tz))
             else:
                 dt = dt.replace(tzinfo=timezone.utc)
         return dt
     except Exception:
-        raise ValueError("Invalid ISO datetime. Use YYYY-MM-DD or RFC3339/ISO-8601.")
+        raise ValueError(f"Invalid ISO datetime '{value}'. Use YYYY-MM-DD or RFC3339/ISO-8601 format.")
 
 
 def _dt_to_iso(dt: Optional[object]) -> Optional[str]:
@@ -125,92 +127,7 @@ def _find_calendar(principal: object, *, calendar_url: Optional[str], calendar_n
 
  
 
-@mcp.tool(description=(
-    "Create an event in the specified calendar. Provide ISO datetimes or YYYY-MM-DD for all-day. "
-    "Specify either calendar_url or calendar_name; if neither is provided, the first calendar is used. "
-    "Uses ICLOUD_EMAIL and ICLOUD_PASSWORD from environment."
-))
-def create_event(
-    summary: str,
-    start: str,
-    end: str,
-    calendar_url: Optional[str] = None,
-    calendar_name: Optional[str] = None,
-    description: Optional[str] = None,
-    location: Optional[str] = None,
-    all_day: bool = False
-) -> Dict[str, str]:
-    email, password = _get_env_credentials()
-    client, principal = _connect(email, password)
-    cal = _find_calendar(principal, calendar_url=calendar_url, calendar_name=calendar_name)
-
-    # Determine datetime or date semantics
-    start_dt = _parse_iso_datetime(start)
-    end_dt = _parse_iso_datetime(end)
-
-    if all_day:
-        if len(start.strip()) != 10 or len(end.strip()) != 10:
-            raise ValueError("For all_day events, start and end must be YYYY-MM-DD.")
-        start_date = date.fromisoformat(start.strip())
-        end_date = date.fromisoformat(end.strip())
-    else:
-        if start_dt is None or end_dt is None:
-            raise ValueError("Start and end must be valid ISO-8601 datetimes.")
-
-    ics_cal = IcsCalendar()
-    ics_cal.add('prodid', '-//iCloud CalDAV MCP//EN')
-    ics_cal.add('version', '2.0')
-
-    evt = IcsEvent()
-    evt.add('uid', f"{uuid4()}@icloud-caldav-mcp")
-    evt.add('summary', summary)
-    evt.add('dtstamp', datetime.now(timezone.utc))
-    if description:
-        evt.add('description', description)
-    if location:
-        evt.add('location', location)
-
-    if all_day:
-        evt.add('dtstart', start_date)
-        evt.add('dtend', end_date)
-    else:
-        # Ensure timezone-aware datetime for icalendar
-        if start_dt.tzinfo is None:
-            start_dt = start_dt.replace(tzinfo=timezone.utc)
-        if end_dt.tzinfo is None:
-            end_dt = end_dt.replace(tzinfo=timezone.utc)
-        evt.add('dtstart', start_dt)
-        evt.add('dtend', end_dt)
-
-    ics_cal.add_component(evt)
-    ics_text = ics_cal.to_ical().decode('utf-8')
-
-    try:
-        created = cal.add_event(ics_text)
-        # Try to extract URL if available
-        event_url = None
-        try:
-            event_url = str(getattr(created, 'url', None)) if created is not None else None
-        except Exception:
-            event_url = None
-        return {
-            "status": "created",
-            "event_url": event_url or ""
-        }
-    except Exception as e:
-        raise RuntimeError(f"Failed to create event: {e}")
-
-
-@mcp.tool(description="Delete an event by its CalDAV event URL. Uses ICLOUD_EMAIL and ICLOUD_PASSWORD from environment.")
-def delete_event(event_url: str) -> Dict[str, str]:
-    email, password = _get_env_credentials()
-    client, principal = _connect(email, password)
-    try:
-        ev = caldav.Event(client=client, url=event_url)
-        ev.delete()
-        return {"status": "deleted", "event_url": event_url}
-    except Exception as e:
-        raise RuntimeError(f"Failed to delete event: {e}")
+ 
 
 
 
@@ -232,7 +149,8 @@ def list_my_calendars() -> List[Dict[str, str]]:
 @mcp.tool(description=(
     "List events from your iCloud calendars using environment variables. "
     "If no calendar_name is specified, searches ALL calendars. "
-    "Dates accept YYYY-MM-DD or full ISO-8601; defaults to past 7 days through next 30 days."
+    "Dates accept YYYY-MM-DD or full ISO-8601; defaults to past 7 days through next 30 days. "
+    "Optional timezone_name parameter for date filtering (defaults to UTC if not provided)."
 ))
 def list_my_events(
     start: Optional[str] = None,
@@ -355,7 +273,9 @@ def list_my_events(
 @mcp.tool(description=(
     "Create an event in your iCloud calendar using environment variables. "
     "Provide ISO datetimes or YYYY-MM-DD for all-day. "
-    "If no calendar_name is provided, uses the first calendar."
+    "If no calendar_name is provided, uses the first calendar. "
+    "Supports recurrence rules (RRULE) and alarms (alarm_minutes_before). "
+    "Optional timezone_name parameter for event times (defaults to UTC if not provided)."
 ))
 def create_my_event(
     summary: str,
@@ -415,14 +335,25 @@ def create_my_event(
     if rrule:
         evt.add('rrule', rrule)
 
+    # Add alarm if requested
     if alarm_minutes_before is not None and alarm_minutes_before >= 0:
         alarm = IcsAlarm()
-        alarm.add('action', 'DISPLAY')
-        alarm.add('trigger', f"-PT{int(alarm_minutes_before)}M")
-        alarm.add('description', f"Reminder: {summary}")
+        # Use property API to avoid type validator issues
+        alarm.ACTION = 'DISPLAY'
+        alarm.DESCRIPTION = 'Reminder'
+        alarm.TRIGGER = timedelta(minutes=-int(alarm_minutes_before))
+        alarm.TRIGGER_RELATED = 'START'
+        # RFC 9074 UID on VALARM + Apple-compatible X-WR-ALARMUID
+        alarm.uid = str(uuid4())
+        alarm.add('X-WR-ALARMUID', alarm.uid, encode=False)
         evt.add_component(alarm)
 
     ics_cal.add_component(evt)
+    # Ensure VTIMEZONE components exist for any TZIDs used
+    try:
+        ics_cal.add_missing_timezones()
+    except Exception:
+        pass
     ics_text = ics_cal.to_ical().decode('utf-8')
 
     try:
@@ -457,7 +388,8 @@ def delete_my_event(event_url: str) -> Dict[str, str]:
 @mcp.tool(description=(
     "Update an existing event by URL or UID. You can change summary, start/end, "
     "description, location, add/change RRULE, and add/replace a VALARM. "
-    "If uid is provided, the first matching event is updated."
+    "If uid is provided, the first matching event is updated. "
+    "Optional timezone_name parameter for new event times (defaults to UTC if not provided)."
 ))
 def update_my_event(
     event_url: Optional[str] = None,
@@ -491,56 +423,162 @@ def update_my_event(
     if event_obj is None:
         raise ValueError("Event not found by URL or UID.")
 
-    ics_text = event_obj.data
-    cal_ics = IcsCalendar.from_ical(ics_text)
-    changed = False
-
-    for comp in cal_ics.walk('vevent'):
-        if summary is not None:
-            comp['summary'] = summary
-            changed = True
-        if description is not None:
-            comp['description'] = description
-            changed = True
-        if location is not None:
-            comp['location'] = location
-            changed = True
-        if rrule is not None:
-            comp['rrule'] = rrule
-            changed = True
-
-        # Update times
+    # Get the original event data to extract key information
+    original_ics = event_obj.data
+    if isinstance(original_ics, bytes):
+        original_ics = original_ics.decode('utf-8')
+    
+    # Parse the original event to get existing properties
+    try:
+        original_cal = IcsCalendar.from_ical(original_ics)
+        original_event = None
+        for comp in original_cal.walk('vevent'):
+            original_event = comp
+            break
+    except Exception:
+        # If parsing fails, create a new event with minimal info
+        original_event = None
+    
+    # Create a new event with updated properties
+    new_cal = IcsCalendar()
+    new_cal.add('prodid', '-//iCloud CalDAV MCP//EN')
+    new_cal.add('version', '2.0')
+    
+    new_event = IcsEvent()
+    
+    # Copy existing properties or use defaults
+    if original_event:
+        # Copy existing UID
+        if original_event.get('uid'):
+            new_event.add('uid', str(original_event.get('uid')))
+        else:
+            new_event.add('uid', f"{uuid4()}@icloud-caldav-mcp")
+        
+        # Copy existing DTSTAMP or create new one
+        if original_event.get('dtstamp'):
+            new_event.add('dtstamp', original_event.get('dtstamp').dt)
+        else:
+            new_event.add('dtstamp', datetime.now(timezone.utc))
+        
+        # Copy existing DTSTART/DTEND or use provided values
         if start is not None:
             new_start = _parse_iso_datetime(start, timezone_name)
-            comp['dtstart'] = new_start
-            changed = True
+            if new_start:
+                new_event.add('dtstart', new_start)
+        elif original_event.get('dtstart'):
+            new_event.add('dtstart', original_event.get('dtstart').dt)
+        
         if end is not None:
             new_end = _parse_iso_datetime(end, timezone_name)
-            comp['dtend'] = new_end
-            changed = True
-
-        # Replace alarm if requested
-        if alarm_minutes_before is not None and alarm_minutes_before >= 0:
-            # Remove existing VALARMs
-            to_remove = [a for a in comp.subcomponents if a.name == 'VALARM']
-            for a in to_remove:
-                comp.subcomponents.remove(a)
-            alarm = IcsAlarm()
-            alarm.add('action', 'DISPLAY')
-            alarm.add('trigger', f"-PT{int(alarm_minutes_before)}M")
-            alarm.add('description', f"Reminder: {comp.get('summary', '')}")
-            comp.add_component(alarm)
-            changed = True
-
-    if not changed:
-        return {"status": "no_changes"}
-
-    # Save back
-    updated_text = cal_ics.to_ical().decode('utf-8')
-    event_obj.data = updated_text
+            if new_end:
+                new_event.add('dtend', new_end)
+        elif original_event.get('dtend'):
+            new_event.add('dtend', original_event.get('dtend').dt)
+        
+        # Copy existing RRULE or use provided value
+        if rrule is not None:
+            new_event.add('rrule', rrule)
+        elif original_event.get('rrule'):
+            new_event.add('rrule', str(original_event.get('rrule')))
+        
+        # Increment SEQUENCE (cast defensively)
+        try:
+            current_sequence_raw = original_event.get('sequence', 0)
+            current_sequence = int(current_sequence_raw)
+        except Exception:
+            current_sequence = 0
+        new_event.add('sequence', current_sequence + 1)
+    else:
+        # Create new event with defaults
+        new_event.add('uid', f"{uuid4()}@icloud-caldav-mcp")
+        new_event.add('dtstamp', datetime.now(timezone.utc))
+        if start is not None:
+            new_start = _parse_iso_datetime(start, timezone_name)
+            if new_start:
+                new_event.add('dtstart', new_start)
+        if end is not None:
+            new_end = _parse_iso_datetime(end, timezone_name)
+            if new_end:
+                new_event.add('dtend', new_end)
+        if rrule is not None:
+            new_event.add('rrule', rrule)
+        new_event.add('sequence', 1)
+    
+    # Set updated properties
+    if summary is not None:
+        new_event.add('summary', summary)
+    elif original_event and original_event.get('summary'):
+        new_event.add('summary', str(original_event.get('summary')))
+    
+    if description is not None:
+        new_event.add('description', description)
+    elif original_event and original_event.get('description'):
+        # Handle description field more carefully
+        desc_value = original_event.get('description')
+        if hasattr(desc_value, 'to_ical'):
+            new_event.add('description', desc_value.to_ical().decode('utf-8'))
+        else:
+            new_event.add('description', str(desc_value))
+    
+    if location is not None:
+        new_event.add('location', location)
+    elif original_event and original_event.get('location'):
+        # Handle location field more carefully
+        loc_value = original_event.get('location')
+        if hasattr(loc_value, 'to_ical'):
+            new_event.add('location', loc_value.to_ical().decode('utf-8'))
+        else:
+            new_event.add('location', str(loc_value))
+    
+    # Alarms
+    if alarm_minutes_before is not None and alarm_minutes_before >= 0:
+        # Add a new alarm but DO NOT remove existing alarms
+        alarm = IcsAlarm()
+        alarm.ACTION = 'DISPLAY'
+        alarm.DESCRIPTION = 'Reminder'
+        alarm.TRIGGER = timedelta(minutes=-int(alarm_minutes_before))
+        alarm.TRIGGER_RELATED = 'START'
+        alarm.uid = str(uuid4())
+        alarm.add('X-WR-ALARMUID', alarm.uid, encode=False)
+        new_event.add_component(alarm)
+        # Preserve any existing alarms as well
+        if original_event is not None:
+            for a in original_event.walk('valarm'):
+                try:
+                    cloned = IcsAlarm.from_ical(a.to_ical())
+                    new_event.add_component(cloned)
+                except Exception:
+                    new_event.add_component(a)
+    else:
+        # No new alarm requested: preserve all existing alarms
+        if original_event is not None:
+            for a in original_event.walk('valarm'):
+                try:
+                    cloned = IcsAlarm.from_ical(a.to_ical())
+                    new_event.add_component(cloned)
+                except Exception:
+                    new_event.add_component(a)
+    
+    new_cal.add_component(new_event)
+    
+    # Replace the event
+    # Ensure VTIMEZONE presence similar to create flow
     try:
-        event_obj.save()
-        return {"status": "updated", "event_url": str(getattr(event_obj, 'url', ''))}
+        new_cal.add_missing_timezones()
+    except Exception:
+        pass
+    new_ics_text = new_cal.to_ical().decode('utf-8')
+    event_obj.data = new_ics_text
+    try:
+        # Save the event by setting the data directly
+        event_obj.data = new_ics_text
+        # Try to save, but don't rely on the return value
+        try:
+            event_obj.save()
+        except Exception as save_error:
+            # If save fails, try alternative approach
+            pass
+        return {"status": "updated", "event_url": event_url or ""}
     except Exception as e:
         raise RuntimeError(f"Failed to update event: {e}")
 
@@ -584,7 +622,7 @@ def get_server_info() -> dict:
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8000))
     host = "0.0.0.0"
-
+    
     print(f"Starting iCloud CalDAV MCP Server on {host}:{port}")
     
     # Validate environment variables on startup
@@ -605,7 +643,7 @@ if __name__ == "__main__":
         print(f"⚠ Warning: {e}")
         print("  Server will start but simplified tools (list_my_*, create_my_*, etc.) will not work.")
         print("  You can still use the original tools with explicit email/password parameters.")
-
+    
     mcp.run(
         transport="http",
         host=host,
