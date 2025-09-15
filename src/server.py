@@ -274,7 +274,15 @@ def delete_event(email: str, password: str, event_url: str) -> Dict[str, str]:
 def list_my_calendars() -> List[Dict[str, str]]:
     """List calendars using credentials from environment variables."""
     email, password = _get_env_credentials()
-    return list_calendars(email, password)
+    client, principal = _connect(email, password)
+    calendars = principal.calendars()
+    results: List[Dict[str, str]] = []
+    for cal in calendars:
+        results.append({
+            "name": _calendar_display_name(cal),
+            "url": str(getattr(cal, "url", ""))
+        })
+    return results
 
 
 @mcp.tool(description=(
@@ -365,15 +373,72 @@ def create_my_event(
 ) -> Dict[str, str]:
     """Create an event using credentials from environment variables."""
     email, password = _get_env_credentials()
-    return create_event(email, password, summary, start, end, calendar_name=calendar_name, 
-                       description=description, location=location, all_day=all_day)
+    client, principal = _connect(email, password)
+    cal = _find_calendar(principal, calendar_url=None, calendar_name=calendar_name)
+
+    # Determine datetime or date semantics
+    start_dt = _parse_iso_datetime(start)
+    end_dt = _parse_iso_datetime(end)
+
+    if all_day:
+        if len(start.strip()) != 10 or len(end.strip()) != 10:
+            raise ValueError("For all_day events, start and end must be YYYY-MM-DD.")
+        start_date = date.fromisoformat(start.strip())
+        end_date = date.fromisoformat(end.strip())
+    else:
+        if start_dt is None or end_dt is None:
+            raise ValueError("Start and end must be valid ISO-8601 datetimes.")
+
+    ics_cal = IcsCalendar()
+    ics_cal.add('prodid', '-//iCloud CalDAV MCP//EN')
+    ics_cal.add('version', '2.0')
+
+    evt = IcsEvent()
+    evt.add('uid', f"{uuid4()}@icloud-caldav-mcp")
+    evt.add('summary', summary)
+    evt.add('dtstamp', datetime.now(timezone.utc))
+    if description:
+        evt.add('description', description)
+    if location:
+        evt.add('location', location)
+
+    if all_day:
+        evt.add('dtstart', start_date)
+        evt.add('dtend', end_date)
+    else:
+        evt.add('dtstart', start_dt)
+        evt.add('dtend', end_dt)
+
+    ics_cal.add_component(evt)
+    ics_text = ics_cal.to_ical().decode('utf-8')
+
+    try:
+        created = cal.add_event(ics_text)
+        # Try to extract URL if available
+        event_url = None
+        try:
+            event_url = str(getattr(created, 'url', None)) if created is not None else None
+        except Exception:
+            event_url = None
+        return {
+            "status": "created",
+            "event_url": event_url or ""
+        }
+    except Exception as e:
+        raise RuntimeError(f"Failed to create event: {e}")
 
 
 @mcp.tool(description="Delete an event by its CalDAV event URL using environment variables.")
 def delete_my_event(event_url: str) -> Dict[str, str]:
     """Delete an event using credentials from environment variables."""
     email, password = _get_env_credentials()
-    return delete_event(email, password, event_url)
+    client, principal = _connect(email, password)
+    try:
+        ev = caldav.Event(client=client, url=event_url)
+        ev.delete()
+        return {"status": "deleted", "event_url": event_url}
+    except Exception as e:
+        raise RuntimeError(f"Failed to delete event: {e}")
 
 
 @mcp.tool(description="Check the connection status to iCloud CalDAV using environment variables.")
