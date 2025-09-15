@@ -174,6 +174,11 @@ def create_event(
         evt.add('dtstart', start_date)
         evt.add('dtend', end_date)
     else:
+        # Ensure timezone-aware datetime for icalendar
+        if start_dt.tzinfo is None:
+            start_dt = start_dt.replace(tzinfo=timezone.utc)
+        if end_dt.tzinfo is None:
+            end_dt = end_dt.replace(tzinfo=timezone.utc)
         evt.add('dtstart', start_dt)
         evt.add('dtend', end_dt)
 
@@ -399,6 +404,11 @@ def create_my_event(
         evt.add('dtstart', start_date)
         evt.add('dtend', end_date)
     else:
+        # Ensure timezone-aware datetime for icalendar
+        if start_dt.tzinfo is None:
+            start_dt = start_dt.replace(tzinfo=timezone.utc)
+        if end_dt.tzinfo is None:
+            end_dt = end_dt.replace(tzinfo=timezone.utc)
         evt.add('dtstart', start_dt)
         evt.add('dtend', end_dt)
 
@@ -545,7 +555,7 @@ def get_connection_status() -> Dict[str, str]:
         return {
             "status": "connected",
             "email": email,
-            "calendars_found": len(calendars),
+            "calendars_found": str(len(calendars)),
             "server_url": ICAL_SERVER_URL
         }
     except Exception as e:
