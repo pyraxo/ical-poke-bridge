@@ -7,6 +7,9 @@
   <p><em>Built for the <a href="https://poke.com">Poke</a> ecosystem and compatible with any MCP-enabled AI agent.</em></p>
 </div>
 
+
+
+
 [![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/josejacas/iCal-Poke-Bridge)
 
 > **⚠️ Important Notes**
