@@ -15,6 +15,19 @@ ICAL_SERVER_URL = "https://caldav.icloud.com"
 
 mcp = FastMCP("iCloud CalDAV MCP Server")
 
+# Environment variable configuration
+ICLOUD_EMAIL = os.environ.get("ICLOUD_EMAIL")
+ICLOUD_PASSWORD = os.environ.get("ICLOUD_PASSWORD")
+
+def _get_env_credentials() -> tuple[str, str]:
+    """Get iCloud credentials from environment variables."""
+    if not ICLOUD_EMAIL or not ICLOUD_PASSWORD:
+        raise ValueError(
+            "iCloud credentials not found in environment variables. "
+            "Please set ICLOUD_EMAIL and ICLOUD_PASSWORD environment variables."
+        )
+    return ICLOUD_EMAIL, ICLOUD_PASSWORD
+
 
 def _connect(email: str, password: str) -> tuple[DAVClient, object]:
     """Create a CalDAV client and return (client, principal)."""
@@ -255,6 +268,135 @@ def delete_event(email: str, password: str, event_url: str) -> Dict[str, str]:
         raise RuntimeError(f"Failed to delete event: {e}")
 
 
+# Simplified MCP tools using environment variables
+
+@mcp.tool(description="List your iCloud calendars using environment variables (ICLOUD_EMAIL, ICLOUD_PASSWORD).")
+def list_my_calendars() -> List[Dict[str, str]]:
+    """List calendars using credentials from environment variables."""
+    email, password = _get_env_credentials()
+    return list_calendars(email, password)
+
+
+@mcp.tool(description=(
+    "List events from your iCloud calendars using environment variables. "
+    "If no calendar_name is specified, searches ALL calendars. "
+    "Dates accept YYYY-MM-DD or full ISO-8601; defaults to past 7 days through next 30 days."
+))
+def list_my_events(
+    start: Optional[str] = None,
+    end: Optional[str] = None,
+    calendar_name: Optional[str] = None
+) -> List[Dict[str, Optional[str]]]:
+    """List events using credentials from environment variables."""
+    email, password = _get_env_credentials()
+    
+    if calendar_name:
+        # Search specific calendar
+        return list_events(email, password, start, end, calendar_name=calendar_name)
+    else:
+        # Search all calendars
+        client, principal = _connect(email, password)
+        calendars = principal.calendars()
+        
+        start_dt = _parse_iso_datetime(start) or (datetime.now(timezone.utc) - timedelta(days=7))
+        end_dt = _parse_iso_datetime(end) or (datetime.now(timezone.utc) + timedelta(days=30))
+        
+        all_events: List[Dict[str, Optional[str]]] = []
+        
+        for cal in calendars:
+            cal_name = _calendar_display_name(cal)
+            try:
+                events = cal.date_search(start_dt, end_dt)
+                for ev in events:
+                    try:
+                        ics = ev.data
+                        cal_ics = IcsCalendar.from_ical(ics)
+                        summary = None
+                        dtstart_val = None
+                        dtend_val = None
+                        uid_val = None
+                        for comp in cal_ics.walk('vevent'):
+                            if comp.get('summary') is not None and summary is None:
+                                summary = str(comp.get('summary'))
+                            if comp.get('uid') is not None and uid_val is None:
+                                uid_val = str(comp.get('uid'))
+                            if comp.get('dtstart') is not None and dtstart_val is None:
+                                dtstart_val = comp.get('dtstart').dt
+                            if comp.get('dtend') is not None and dtend_val is None:
+                                dtend_val = comp.get('dtend').dt
+                        all_events.append({
+                            "calendar_name": cal_name,
+                            "url": str(getattr(ev, "url", "")),
+                            "uid": uid_val,
+                            "summary": summary,
+                            "start": _dt_to_iso(dtstart_val),
+                            "end": _dt_to_iso(dtend_val)
+                        })
+                    except Exception:
+                        # If parsing fails, still return the URL at least
+                        all_events.append({
+                            "calendar_name": cal_name,
+                            "url": str(getattr(ev, "url", "")),
+                            "uid": None,
+                            "summary": None,
+                            "start": None,
+                            "end": None
+                        })
+            except Exception:
+                # Skip calendars that can't be searched
+                continue
+        
+        return all_events
+
+
+@mcp.tool(description=(
+    "Create an event in your iCloud calendar using environment variables. "
+    "Provide ISO datetimes or YYYY-MM-DD for all-day. "
+    "If no calendar_name is provided, uses the first calendar."
+))
+def create_my_event(
+    summary: str,
+    start: str,
+    end: str,
+    calendar_name: Optional[str] = None,
+    description: Optional[str] = None,
+    location: Optional[str] = None,
+    all_day: bool = False
+) -> Dict[str, str]:
+    """Create an event using credentials from environment variables."""
+    email, password = _get_env_credentials()
+    return create_event(email, password, summary, start, end, calendar_name=calendar_name, 
+                       description=description, location=location, all_day=all_day)
+
+
+@mcp.tool(description="Delete an event by its CalDAV event URL using environment variables.")
+def delete_my_event(event_url: str) -> Dict[str, str]:
+    """Delete an event using credentials from environment variables."""
+    email, password = _get_env_credentials()
+    return delete_event(email, password, event_url)
+
+
+@mcp.tool(description="Check the connection status to iCloud CalDAV using environment variables.")
+def get_connection_status() -> Dict[str, str]:
+    """Test the iCloud CalDAV connection using environment variables."""
+    try:
+        email, password = _get_env_credentials()
+        client, principal = _connect(email, password)
+        calendars = principal.calendars()
+        return {
+            "status": "connected",
+            "email": email,
+            "calendars_found": len(calendars),
+            "server_url": ICAL_SERVER_URL
+        }
+    except Exception as e:
+        return {
+            "status": "error",
+            "error": str(e),
+            "server_url": ICAL_SERVER_URL
+        }
+
+
 @mcp.tool(description="Greet a user by name with a welcome message from the MCP server")
 def greet(name: str) -> str:
     return f"Hello, {name}! Welcome to the iCloud CalDAV MCP server."
@@ -274,7 +416,26 @@ if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8000))
     host = "0.0.0.0"
 
-    print(f"Starting FastMCP server on {host}:{port}")
+    print(f"Starting iCloud CalDAV MCP Server on {host}:{port}")
+    
+    # Validate environment variables on startup
+    try:
+        email, password = _get_env_credentials()
+        print(f"✓ Environment variables configured for: {email}")
+        
+        # Test connection on startup
+        try:
+            client, principal = _connect(email, password)
+            calendars = principal.calendars()
+            print(f"✓ Successfully connected to iCloud CalDAV")
+            print(f"✓ Found {len(calendars)} calendar(s)")
+        except Exception as e:
+            print(f"⚠ Warning: Could not connect to iCloud CalDAV: {e}")
+            print("  Server will start but tools may fail until credentials are fixed.")
+    except ValueError as e:
+        print(f"⚠ Warning: {e}")
+        print("  Server will start but simplified tools (list_my_*, create_my_*, etc.) will not work.")
+        print("  You can still use the original tools with explicit email/password parameters.")
 
     mcp.run(
         transport="http",
