@@ -4,6 +4,7 @@ from datetime import datetime, date, timezone, timedelta
 from zoneinfo import ZoneInfo
 from typing import List, Dict, Optional
 from uuid import uuid4
+from urllib.parse import urlparse, unquote
 
 import caldav
 from caldav import DAVClient
@@ -125,7 +126,42 @@ def _find_calendar(principal: object, *, calendar_url: Optional[str], calendar_n
     raise ValueError("No calendars found for this account.")
 
 
- 
+def _uid_from_event_url(event_url: Optional[str]) -> Optional[str]:
+    if not event_url:
+        return None
+    try:
+        path = urlparse(event_url).path
+        filename = path.rsplit('/', 1)[-1]
+        if filename.lower().endswith('.ics'):
+            base = filename[:-4]
+        else:
+            base = filename
+        return unquote(base)
+    except Exception:
+        return None
+
+
+def _get_event_by_url_or_uid(client: DAVClient, cal: caldav.Calendar, event_url: Optional[str], uid: Optional[str]) -> caldav.Event:
+    # Prefer UID when available
+    if uid:
+        try:
+            return cal.event_by_uid(uid)  # type: ignore[attr-defined]
+        except Exception:
+            pass
+    # Derive UID from URL for iCloud (filename is UID)
+    if event_url:
+        uid_guess = _uid_from_event_url(event_url)
+        if uid_guess:
+            try:
+                return cal.event_by_uid(uid_guess)  # type: ignore[attr-defined]
+            except Exception:
+                pass
+        # Fallback: attempt constructing by absolute URL (may fail on some servers)
+        try:
+            return caldav.Event(client=client, url=event_url)
+        except Exception:
+            pass
+    raise ValueError("Event not found by URL or UID.")
 
  
 
@@ -387,7 +423,9 @@ def delete_my_event(event_url: str) -> Dict[str, str]:
 
 @mcp.tool(description=(
     "Update an existing event by URL or UID. You can change summary, start/end, "
-    "description, location, add/change RRULE, and add/replace a VALARM. "
+    "description, location, and add/change RRULE. When passing alarm_minutes_before, "
+    "this tool MERGES by adding a new VALARM and preserves existing alarms; it does not "
+    "replace or remove alarms. Use dedicated alarm tools to list/add/replace/remove alarms. "
     "If uid is provided, the first matching event is updated. "
     "Optional timezone_name parameter for new event times (defaults to UTC if not provided)."
 ))
@@ -411,17 +449,8 @@ def update_my_event(
     if not event_url and not uid:
         raise ValueError("Provide either event_url or uid to identify the event to update.")
 
-    # Locate the event
-    event_obj = None
-    if event_url:
-        event_obj = caldav.Event(client=client, url=event_url)
-    else:
-        try:
-            event_obj = cal.event_by_uid(uid)  # type: ignore[attr-defined]
-        except Exception:
-            event_obj = None
-    if event_obj is None:
-        raise ValueError("Event not found by URL or UID.")
+    # Locate the event (prefer UID; derive UID from URL if needed)
+    event_obj = _get_event_by_url_or_uid(client, cal, event_url, uid)
 
     # Get the original event data to extract key information
     original_ics = event_obj.data
@@ -583,6 +612,437 @@ def update_my_event(
         raise RuntimeError(f"Failed to update event: {e}")
 
 
+@mcp.tool(description=(
+    "List VALARMs for an event by URL or UID. Returns alarm UID, Apple X-WR-ALARMUID, "
+    "trigger (normalized minutes_before when relative), RELATED, ACTION, and DESCRIPTION."
+))
+def list_event_alarms(
+    event_url: Optional[str] = None,
+    uid: Optional[str] = None,
+    calendar_name: Optional[str] = None
+) -> List[Dict[str, Optional[str]]]:
+    email, password = _get_env_credentials()
+    client, principal = _connect(email, password)
+    cal = _find_calendar(principal, calendar_url=None, calendar_name=calendar_name)
+
+    if not event_url and not uid:
+        raise ValueError("Provide either event_url or uid to identify the event.")
+
+    event_obj = _get_event_by_url_or_uid(client, cal, event_url, uid)
+
+    ics_data = event_obj.data
+    ics_bytes = ics_data if isinstance(ics_data, bytes) else str(ics_data).encode('utf-8')
+    cal_ics = IcsCalendar.from_ical(ics_bytes)
+
+    results: List[Dict[str, Optional[str]]] = []
+    for comp in cal_ics.walk('valarm'):
+        trigger_prop = comp.get('trigger')
+        minutes_before: Optional[str] = None
+        related: Optional[str] = None
+        if trigger_prop is not None:
+            try:
+                # icalendar returns vDDDTypes; .dt may be timedelta or datetime
+                value = getattr(trigger_prop, 'dt', trigger_prop)
+                rel_params = getattr(trigger_prop, 'params', {})
+                related = str(rel_params.get('RELATED', 'START')) if rel_params is not None else 'START'
+                if isinstance(value, timedelta):
+                    minutes_before = str(int(abs(value.total_seconds()) // 60))
+                else:
+                    minutes_before = None
+            except Exception:
+                minutes_before = None
+        results.append({
+            "uid": str(comp.get('uid')) if comp.get('uid') is not None else None,
+            "x_wr_alarmuid": str(comp.get('X-WR-ALARMUID')) if comp.get('X-WR-ALARMUID') is not None else None,
+            "minutes_before": minutes_before,
+            "related": related,
+            "action": str(comp.get('action')) if comp.get('action') is not None else None,
+            "description": str(comp.get('description')) if comp.get('description') is not None else None
+        })
+    return results
+
+
+@mcp.tool(description=(
+    "Add a VALARM to an event by URL or UID. Idempotent when dedupe_by_trigger is true: "
+    "if an alarm with the same minutes_before exists, no new alarm is added."
+))
+def add_event_alarm(
+    event_url: Optional[str] = None,
+    uid: Optional[str] = None,
+    minutes_before: int = 15,
+    calendar_name: Optional[str] = None,
+    description: Optional[str] = 'Reminder',
+    action: str = 'DISPLAY',
+    related: str = 'START',
+    dedupe_by_trigger: bool = True
+) -> Dict[str, str]:
+    email, password = _get_env_credentials()
+    client, principal = _connect(email, password)
+    cal = _find_calendar(principal, calendar_url=None, calendar_name=calendar_name)
+
+    if not event_url and not uid:
+        raise ValueError("Provide either event_url or uid to identify the event.")
+
+    event_obj = _get_event_by_url_or_uid(client, cal, event_url, uid)
+
+    original_ics = event_obj.data
+    ics_bytes = original_ics if isinstance(original_ics, bytes) else str(original_ics).encode('utf-8')
+
+    try:
+        original_cal = IcsCalendar.from_ical(ics_bytes)
+        original_event = None
+        for comp in original_cal.walk('vevent'):
+            original_event = comp
+            break
+    except Exception:
+        original_event = None
+
+    if original_event is None:
+        raise ValueError("Unable to parse original event for alarm add.")
+
+    # Check duplicates by trigger minutes if requested
+    if dedupe_by_trigger:
+        for a in original_event.walk('valarm'):
+            trig = a.get('trigger')
+            if trig is None:
+                continue
+            try:
+                value = getattr(trig, 'dt', trig)
+                if isinstance(value, timedelta):
+                    existing_minutes = int(abs(value.total_seconds()) // 60)
+                    if existing_minutes == int(minutes_before):
+                        return {"status": "skipped", "reason": "duplicate_trigger", "event_url": event_url or ""}
+            except Exception:
+                pass
+
+    new_cal = IcsCalendar()
+    new_cal.add('prodid', '-//iCloud CalDAV MCP//EN')
+    new_cal.add('version', '2.0')
+
+    new_event = IcsEvent()
+
+    # Copy core fields
+    if original_event.get('uid'):
+        new_event.add('uid', str(original_event.get('uid')))
+    else:
+        new_event.add('uid', f"{uuid4()}@icloud-caldav-mcp")
+
+    if original_event.get('dtstamp'):
+        new_event.add('dtstamp', original_event.get('dtstamp').dt)
+    else:
+        new_event.add('dtstamp', datetime.now(timezone.utc))
+
+    if original_event.get('dtstart'):
+        new_event.add('dtstart', original_event.get('dtstart').dt)
+    if original_event.get('dtend'):
+        new_event.add('dtend', original_event.get('dtend').dt)
+    if original_event.get('rrule'):
+        new_event.add('rrule', str(original_event.get('rrule')))
+    if original_event.get('summary'):
+        new_event.add('summary', str(original_event.get('summary')))
+    if original_event.get('description'):
+        desc_value = original_event.get('description')
+        if hasattr(desc_value, 'to_ical'):
+            new_event.add('description', desc_value.to_ical().decode('utf-8'))
+        else:
+            new_event.add('description', str(desc_value))
+    if original_event.get('location'):
+        loc_value = original_event.get('location')
+        if hasattr(loc_value, 'to_ical'):
+            new_event.add('location', loc_value.to_ical().decode('utf-8'))
+        else:
+            new_event.add('location', str(loc_value))
+
+    # Increment sequence
+    try:
+        current_sequence_raw = original_event.get('sequence', 0)
+        current_sequence = int(current_sequence_raw)
+    except Exception:
+        current_sequence = 0
+    new_event.add('sequence', current_sequence + 1)
+
+    # Preserve existing alarms
+    for a in original_event.walk('valarm'):
+        try:
+            cloned = IcsAlarm.from_ical(a.to_ical())
+            new_event.add_component(cloned)
+        except Exception:
+            new_event.add_component(a)
+
+    # Add the new alarm
+    alarm = IcsAlarm()
+    alarm.ACTION = action or 'DISPLAY'
+    if description:
+        alarm.DESCRIPTION = description
+    alarm.TRIGGER = timedelta(minutes=-int(minutes_before))
+    alarm.TRIGGER_RELATED = related or 'START'
+    alarm.uid = str(uuid4())
+    alarm.add('X-WR-ALARMUID', alarm.uid, encode=False)
+    new_event.add_component(alarm)
+
+    new_cal.add_component(new_event)
+    try:
+        new_cal.add_missing_timezones()
+    except Exception:
+        pass
+    new_ics_text = new_cal.to_ical().decode('utf-8')
+    event_obj.data = new_ics_text
+    try:
+        event_obj.save()
+    except Exception:
+        pass
+    return {"status": "added", "event_url": event_url or ""}
+
+
+@mcp.tool(description=(
+    "Replace a matching VALARM on an event. Match by minutes_before (default) or by alarm UID. "
+    "Adds the new alarm, removes the matched one, preserves others."
+))
+def replace_event_alarm(
+    event_url: Optional[str] = None,
+    uid: Optional[str] = None,
+    calendar_name: Optional[str] = None,
+    match_by: str = 'minutes',
+    minutes_before: Optional[int] = None,
+    alarm_uid: Optional[str] = None,
+    new_minutes_before: int = 15,
+    description: Optional[str] = 'Reminder',
+    action: str = 'DISPLAY',
+    related: str = 'START'
+) -> Dict[str, str]:
+    email, password = _get_env_credentials()
+    client, principal = _connect(email, password)
+    cal = _find_calendar(principal, calendar_url=None, calendar_name=calendar_name)
+
+    if not event_url and not uid:
+        raise ValueError("Provide either event_url or uid to identify the event.")
+
+    event_obj = _get_event_by_url_or_uid(client, cal, event_url, uid)
+
+    original_ics = event_obj.data
+    ics_bytes = original_ics if isinstance(original_ics, bytes) else str(original_ics).encode('utf-8')
+
+    try:
+        original_cal = IcsCalendar.from_ical(ics_bytes)
+        original_event = None
+        for comp in original_cal.walk('vevent'):
+            original_event = comp
+            break
+    except Exception:
+        original_event = None
+
+    if original_event is None:
+        raise ValueError("Unable to parse original event for alarm replacement.")
+
+    # Build new event
+    new_cal = IcsCalendar()
+    new_cal.add('prodid', '-//iCloud CalDAV MCP//EN')
+    new_cal.add('version', '2.0')
+    new_event = IcsEvent()
+
+    if original_event.get('uid'):
+        new_event.add('uid', str(original_event.get('uid')))
+    else:
+        new_event.add('uid', f"{uuid4()}@icloud-caldav-mcp")
+
+    if original_event.get('dtstamp'):
+        new_event.add('dtstamp', original_event.get('dtstamp').dt)
+    else:
+        new_event.add('dtstamp', datetime.now(timezone.utc))
+    if original_event.get('dtstart'):
+        new_event.add('dtstart', original_event.get('dtstart').dt)
+    if original_event.get('dtend'):
+        new_event.add('dtend', original_event.get('dtend').dt)
+    if original_event.get('rrule'):
+        new_event.add('rrule', str(original_event.get('rrule')))
+    if original_event.get('summary'):
+        new_event.add('summary', str(original_event.get('summary')))
+    if original_event.get('description'):
+        desc_value = original_event.get('description')
+        if hasattr(desc_value, 'to_ical'):
+            new_event.add('description', desc_value.to_ical().decode('utf-8'))
+        else:
+            new_event.add('description', str(desc_value))
+    if original_event.get('location'):
+        loc_value = original_event.get('location')
+        if hasattr(loc_value, 'to_ical'):
+            new_event.add('location', loc_value.to_ical().decode('utf-8'))
+        else:
+            new_event.add('location', str(loc_value))
+
+    try:
+        current_sequence_raw = original_event.get('sequence', 0)
+        current_sequence = int(current_sequence_raw)
+    except Exception:
+        current_sequence = 0
+    new_event.add('sequence', current_sequence + 1)
+
+    # Copy only alarms that do NOT match the selection criteria
+    for a in original_event.walk('valarm'):
+        keep = True
+        if match_by == 'uid' and alarm_uid:
+            if str(a.get('uid')) == alarm_uid or str(a.get('X-WR-ALARMUID')) == alarm_uid:
+                keep = False
+        elif match_by == 'minutes' and minutes_before is not None:
+            trig = a.get('trigger')
+            if trig is not None:
+                try:
+                    value = getattr(trig, 'dt', trig)
+                    if isinstance(value, timedelta):
+                        existing_minutes = int(abs(value.total_seconds()) // 60)
+                        if existing_minutes == int(minutes_before):
+                            keep = False
+                except Exception:
+                    pass
+        if keep:
+            try:
+                cloned = IcsAlarm.from_ical(a.to_ical())
+                new_event.add_component(cloned)
+            except Exception:
+                new_event.add_component(a)
+
+    # Add the replacement alarm
+    new_alarm = IcsAlarm()
+    new_alarm.ACTION = action or 'DISPLAY'
+    if description:
+        new_alarm.DESCRIPTION = description
+    new_alarm.TRIGGER = timedelta(minutes=-int(new_minutes_before))
+    new_alarm.TRIGGER_RELATED = related or 'START'
+    new_alarm.uid = str(uuid4())
+    new_alarm.add('X-WR-ALARMUID', new_alarm.uid, encode=False)
+    new_event.add_component(new_alarm)
+
+    new_cal.add_component(new_event)
+    try:
+        new_cal.add_missing_timezones()
+    except Exception:
+        pass
+    new_ics_text = new_cal.to_ical().decode('utf-8')
+    event_obj.data = new_ics_text
+    try:
+        event_obj.save()
+    except Exception:
+        pass
+    return {"status": "replaced", "event_url": event_url or ""}
+
+
+@mcp.tool(description=(
+    "Remove VALARM(s) from an event. Match by minutes_before, by alarm UID, or remove all."
+))
+def remove_event_alarm(
+    event_url: Optional[str] = None,
+    uid: Optional[str] = None,
+    calendar_name: Optional[str] = None,
+    match_by: str = 'minutes',
+    minutes_before: Optional[int] = None,
+    alarm_uid: Optional[str] = None
+) -> Dict[str, str]:
+    email, password = _get_env_credentials()
+    client, principal = _connect(email, password)
+    cal = _find_calendar(principal, calendar_url=None, calendar_name=calendar_name)
+
+    if not event_url and not uid:
+        raise ValueError("Provide either event_url or uid to identify the event.")
+
+    event_obj = _get_event_by_url_or_uid(client, cal, event_url, uid)
+
+    original_ics = event_obj.data
+    ics_bytes = original_ics if isinstance(original_ics, bytes) else str(original_ics).encode('utf-8')
+
+    try:
+        original_cal = IcsCalendar.from_ical(ics_bytes)
+        original_event = None
+        for comp in original_cal.walk('vevent'):
+            original_event = comp
+            break
+    except Exception:
+        original_event = None
+
+    if original_event is None:
+        raise ValueError("Unable to parse original event for alarm removal.")
+
+    new_cal = IcsCalendar()
+    new_cal.add('prodid', '-//iCloud CalDAV MCP//EN')
+    new_cal.add('version', '2.0')
+    new_event = IcsEvent()
+
+    if original_event.get('uid'):
+        new_event.add('uid', str(original_event.get('uid')))
+    else:
+        new_event.add('uid', f"{uuid4()}@icloud-caldav-mcp")
+    if original_event.get('dtstamp'):
+        new_event.add('dtstamp', original_event.get('dtstamp').dt)
+    else:
+        new_event.add('dtstamp', datetime.now(timezone.utc))
+    if original_event.get('dtstart'):
+        new_event.add('dtstart', original_event.get('dtstart').dt)
+    if original_event.get('dtend'):
+        new_event.add('dtend', original_event.get('dtend').dt)
+    if original_event.get('rrule'):
+        new_event.add('rrule', str(original_event.get('rrule')))
+    if original_event.get('summary'):
+        new_event.add('summary', str(original_event.get('summary')))
+    if original_event.get('description'):
+        desc_value = original_event.get('description')
+        if hasattr(desc_value, 'to_ical'):
+            new_event.add('description', desc_value.to_ical().decode('utf-8'))
+        else:
+            new_event.add('description', str(desc_value))
+    if original_event.get('location'):
+        loc_value = original_event.get('location')
+        if hasattr(loc_value, 'to_ical'):
+            new_event.add('location', loc_value.to_ical().decode('utf-8'))
+        else:
+            new_event.add('location', str(loc_value))
+
+    try:
+        current_sequence_raw = original_event.get('sequence', 0)
+        current_sequence = int(current_sequence_raw)
+    except Exception:
+        current_sequence = 0
+    new_event.add('sequence', current_sequence + 1)
+
+    removed_count = 0
+    for a in original_event.walk('valarm'):
+        remove = False
+        if match_by == 'all':
+            remove = True
+        elif match_by == 'uid' and alarm_uid:
+            if str(a.get('uid')) == alarm_uid or str(a.get('X-WR-ALARMUID')) == alarm_uid:
+                remove = True
+        elif match_by == 'minutes' and minutes_before is not None:
+            trig = a.get('trigger')
+            if trig is not None:
+                try:
+                    value = getattr(trig, 'dt', trig)
+                    if isinstance(value, timedelta):
+                        existing_minutes = int(abs(value.total_seconds()) // 60)
+                        if existing_minutes == int(minutes_before):
+                            remove = True
+                except Exception:
+                    pass
+        if remove:
+            removed_count += 1
+            continue
+        # keep it
+        try:
+            cloned = IcsAlarm.from_ical(a.to_ical())
+            new_event.add_component(cloned)
+        except Exception:
+            new_event.add_component(a)
+
+    new_cal.add_component(new_event)
+    try:
+        new_cal.add_missing_timezones()
+    except Exception:
+        pass
+    new_ics_text = new_cal.to_ical().decode('utf-8')
+    event_obj.data = new_ics_text
+    try:
+        event_obj.save()
+    except Exception:
+        pass
+    return {"status": "removed", "removed": str(removed_count), "event_url": event_url or ""}
 @mcp.tool(description="Check the connection status to iCloud CalDAV using environment variables.")
 def get_connection_status() -> Dict[str, str]:
     """Test the iCloud CalDAV connection using environment variables."""
