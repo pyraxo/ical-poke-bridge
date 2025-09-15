@@ -49,7 +49,6 @@ Open http://localhost:3000 and connect to `http://localhost:8000/mcp` using "Str
 - `get_connection_status()` - Check iCloud connection
 
 **Advanced tools (env-based auth):**
-- `list_calendars()` - List calendars using environment credentials
 - `create_event(summary, start, end, calendar_url?, calendar_name?, ...)` - Create event using environment credentials
 - `delete_event(event_url)` - Delete event using environment credentials
 

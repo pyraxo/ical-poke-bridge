@@ -116,18 +116,7 @@ def _find_calendar(principal: object, *, calendar_url: Optional[str], calendar_n
     raise ValueError("No calendars found for this account.")
 
 
-@mcp.tool(description="List your iCloud calendars using environment variables (ICLOUD_EMAIL, ICLOUD_PASSWORD).")
-def list_calendars() -> List[Dict[str, str]]:
-    email, password = _get_env_credentials()
-    client, principal = _connect(email, password)
-    calendars = principal.calendars()
-    results: List[Dict[str, str]] = []
-    for cal in calendars:
-        results.append({
-            "name": _calendar_display_name(cal),
-            "url": str(getattr(cal, "url", ""))
-        })
-    return results
+ 
 
 
  
