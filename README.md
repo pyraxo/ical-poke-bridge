@@ -91,6 +91,33 @@ ICLOUD_PASSWORD=your-16-character-app-specific-password
    - **Transport**: Streamable HTTP
 3. Test the connection by asking Poke: `"Check my icloud calendar connection status"`
 
+
+## 🔍 Troubleshooting
+
+### Connection Issues
+- ❌ **"Failed to connect to CalDAV server"**
+  - ✅ Verify your Apple App-Specific Password is correct (16 characters)
+  - ✅ Check that 2FA is enabled on your Apple ID
+  - ✅ Ensure your iCloud email is exactly correct
+  - ✅ Try generating a new App-Specific Password
+
+### Server Issues  
+- ❌ **Server won't start**
+  - ✅ Check Render/VPS logs for startup errors
+  - ✅ Verify environment variables are set correctly
+  - ✅ Ensure Python dependencies are installed
+
+### AI Agent Issues
+- ❌ **"400 Bad Request" errors**
+  - ✅ Ensure JSON-RPC 2.0 format with `jsonrpc` and `id` fields
+  - ✅ Use correct headers: `Content-Type: application/json`
+  - ✅ Check the endpoint URL includes `/mcp`
+
+- ❌ **Events not found after creation**
+  - ✅ Use broader date ranges (minimum 2 days)
+  - ✅ Search across all calendars if unsure
+
+
 ## 🛠️ Local Development
 
 ### Setup Development Environment
@@ -242,27 +269,3 @@ data: {"jsonrpc": "2.0", "id": 1, "result": {"success": true, "events": [...]}}
 
 **⚠️  IMPORTANT:** The response body is prefixed with `data: ` - AI agents must parse this correctly!
 
-## 🔍 Troubleshooting
-
-### Connection Issues
-- ❌ **"Failed to connect to CalDAV server"**
-  - ✅ Verify your Apple App-Specific Password is correct (16 characters)
-  - ✅ Check that 2FA is enabled on your Apple ID
-  - ✅ Ensure your iCloud email is exactly correct
-  - ✅ Try generating a new App-Specific Password
-
-### Server Issues  
-- ❌ **Server won't start**
-  - ✅ Check Render/VPS logs for startup errors
-  - ✅ Verify environment variables are set correctly
-  - ✅ Ensure Python dependencies are installed
-
-### AI Agent Issues
-- ❌ **"400 Bad Request" errors**
-  - ✅ Ensure JSON-RPC 2.0 format with `jsonrpc` and `id` fields
-  - ✅ Use correct headers: `Content-Type: application/json`
-  - ✅ Check the endpoint URL includes `/mcp`
-
-- ❌ **Events not found after creation**
-  - ✅ Use broader date ranges (minimum 2 days)
-  - ✅ Search across all calendars if unsure
