@@ -49,11 +49,11 @@ Before starting, you'll need:
 
 ### 3. Deploy the Server
 
-#### Option A: One-Click Deploy to Render (Recommended)
+#### Option A: Deploy to Render (Recommended)
 1. Click the "Deploy to Render" button above
 2. Connect your GitHub account to Render
 3. Fork the repository when prompted
-4. Configure environment variables (see next step)
+4. IMPORTANT: Configure environment variables (see step 4)
 
 #### Option B: VPS Deployment (Best Performance)
 ```bash
@@ -71,18 +71,15 @@ export ICLOUD_PASSWORD="your-app-specific-password"
 python3 src/server.py
 ```
 
-### 4. Configure Environment Variables
+### 4. Configure Environment Variables in Render 
 
-Set these in your Render dashboard or VPS:
+Set these in your Render dashboard settings:
 
 ```bash
 # Required - iCloud Credentials
 ICLOUD_EMAIL=your-email@icloud.com
 ICLOUD_PASSWORD=your-16-character-app-specific-password
 
-# Optional - Server Configuration
-PORT=8000
-ENVIRONMENT=production
 ```
 
 ### 5. Connect to Poke
