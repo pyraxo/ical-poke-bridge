@@ -7,11 +7,10 @@
   <p><em>Built for <a href="https://poke.com">Poke</a> but should work with other agents.</em></p>
 </div><br><br>
 
-
-
 [![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/josejacas/iCal-Poke-Bridge)
 
 > **⚠️ Important Notes**
+>
 > - **Apple App-Specific Password Required**: This server requires an Apple App-Specific Password, not your main Apple ID password
 > - **iCloud CalDAV Limitations**: Some operations (like reminder modifications) have limitations due to iCloud's CalDAV complexities. Work in progress.
 
@@ -35,6 +34,7 @@
 ### 1. Prerequisites
 
 Before starting, you'll need:
+
 - An [Apple ID](https://appleid.apple.com) with iCloud calendar enabled
 - A [Render](https://render.com) account (for deployment) or VPS
 - A [Poke](https://poke.com) account
@@ -50,12 +50,32 @@ Before starting, you'll need:
 ### 3. Deploy the Server
 
 #### Option A: Deploy to Render (Recommended)
+
 1. Click the "Deploy to Render" button above
 2. Connect your GitHub account to Render
 3. Fork the repository when prompted
 4. IMPORTANT: Configure environment variables (see step 4)
 
-#### Option B: VPS Deployment (Best Performance)
+#### Option B: Docker Deployment (Recommended for Self-Hosting)
+
+```bash
+# Clone the repository
+git clone https://github.com/your-username/icloud-caldav-mcp.git
+cd icloud-caldav-mcp
+
+# Create environment file
+cp .env.example .env
+# Edit .env with your iCloud credentials
+
+# Start with Docker Compose
+docker-compose up --build -d
+
+# Or use the convenience script
+./docker-start.sh
+```
+
+#### Option C: VPS Deployment (Manual)
+
 ```bash
 # On your VPS (Ubuntu/Debian):
 git clone https://github.com/your-username/icloud-caldav-mcp.git
@@ -71,7 +91,7 @@ export ICLOUD_PASSWORD="your-app-specific-password"
 python3 src/server.py
 ```
 
-### 4. Configure Environment Variables in Render 
+### 4. Configure Environment Variables in Render
 
 Set these in your Render dashboard settings:
 
@@ -91,24 +111,27 @@ ICLOUD_PASSWORD=your-16-character-app-specific-password
    - **Transport**: Streamable HTTP
 3. Test the connection by asking Poke: `"Check my icloud calendar connection status"`
 
-
 ## 🔍 Troubleshooting
 
 ### Connection Issues
+
 - ❌ **"Failed to connect to CalDAV server"**
   - ✅ Verify your Apple App-Specific Password is correct (16 characters)
   - ✅ Check that 2FA is enabled on your Apple ID
   - ✅ Ensure your iCloud email is exactly correct
   - ✅ Try generating a new App-Specific Password
 
-### Server Issues  
+### Server Issues
+
 - ❌ **Server won't start**
   - ✅ Check Render/VPS logs for startup errors
   - ✅ Verify environment variables are set correctly
   - ✅ Ensure Python dependencies are installed
 
 ### AI Agent Issues
+
 - ❌ **"400 Bad Request" errors**
+
   - ✅ Ensure JSON-RPC 2.0 format with `jsonrpc` and `id` fields
   - ✅ Use correct headers: `Content-Type: application/json`
   - ✅ Check the endpoint URL includes `/mcp`
@@ -117,10 +140,30 @@ ICLOUD_PASSWORD=your-16-character-app-specific-password
   - ✅ Use broader date ranges (minimum 2 days)
   - ✅ Search across all calendars if unsure
 
-
 ## 🛠️ Local Development
 
-### Setup Development Environment
+### Option A: Docker Development (Easiest)
+
+```bash
+# Clone the repository
+git clone https://github.com/your-username/icloud-caldav-mcp.git
+cd icloud-caldav-mcp
+
+# Create environment file
+cp .env.example .env
+# Edit .env with your iCloud credentials
+
+# Start development server
+docker-compose up --build
+
+# View logs
+docker-compose logs -f
+
+# Stop when done
+docker-compose down
+```
+
+### Option B: Native Python Development
 
 ```bash
 # Clone the repository
@@ -128,7 +171,7 @@ git clone https://github.com/your-username/icloud-caldav-mcp.git
 cd icloud-caldav-mcp
 
 # Create virtual environment
-conda create -n icloud-mcp python=3.13
+conda create -n icloud-mcp python=3.12
 conda activate icloud-mcp
 
 # Install dependencies
@@ -137,14 +180,14 @@ pip install -r requirements.txt
 # Set environment variables
 export ICLOUD_EMAIL="your-email@icloud.com"
 export ICLOUD_PASSWORD="your-app-specific-password"
-```
 
-### Run Locally
-
-```bash
 # Start the server
 python src/server.py
+```
 
+### Testing with MCP Inspector
+
+```bash
 # In another terminal, test with MCP Inspector
 npx @modelcontextprotocol/inspector
 ```
@@ -153,19 +196,20 @@ Open http://localhost:3000 and connect to `http://localhost:8000/mcp` using "Str
 
 ## 🛠️ Available Tools & Capabilities
 
-| Tool Name | Description | Example Usage |
-|-----------|-------------|---------------|
-| `get_connection_status` | Test iCloud CalDAV connection | Connection Testing |
-| `list_my_calendars` | List all your calendars | "Show me all my calendars" |
-| `list_my_events` | List events with date range ⚠️ Use 2 day minimum | "What events do I have this week?" |
-| `create_my_event` | Create events with alarms | "Create a meeting tomorrow at 2pm" |
-| `update_my_event` | Update existing events | "Change my meeting title to 'Team Sync'" |
-| `delete_my_event` | Delete events | "Cancel my dentist appointment" |
-| `list_event_alarms` | List alarms for an event | "What reminders do I have set?" |
+| Tool Name               | Description                                      | Example Usage                            |
+| ----------------------- | ------------------------------------------------ | ---------------------------------------- |
+| `get_connection_status` | Test iCloud CalDAV connection                    | Connection Testing                       |
+| `list_my_calendars`     | List all your calendars                          | "Show me all my calendars"               |
+| `list_my_events`        | List events with date range ⚠️ Use 2 day minimum | "What events do I have this week?"       |
+| `create_my_event`       | Create events with alarms                        | "Create a meeting tomorrow at 2pm"       |
+| `update_my_event`       | Update existing events                           | "Change my meeting title to 'Team Sync'" |
+| `delete_my_event`       | Delete events                                    | "Cancel my dentist appointment"          |
+| `list_event_alarms`     | List alarms for an event                         | "What reminders do I have set?"          |
 
 ### Example Poke Commands
 
 Ask Poke questions like:
+
 - "What events do I have this week?"
 - "Create a dentist appointment for next Tuesday at 3pm with a 30-minute reminder"
 - "Change my 'Meeting' event title to 'Team Standup'"
@@ -215,32 +259,35 @@ Potential improvements for future versions:
 **📡 CRITICAL: All tool calls must use this exact format to avoid 400/406 errors:**
 
 ### Required Headers
+
 ```json
 {
-    "Content-Type": "application/json",
-    "Accept": "application/json, text/event-stream"
+  "Content-Type": "application/json",
+  "Accept": "application/json, text/event-stream"
 }
 ```
 
 ### Request Body Format (JSON-RPC 2.0 - REQUIRED)
+
 ```json
 {
-    "jsonrpc": "2.0",
-    "id": 1,
-    "method": "tools/call",
-    "params": {
-        "name": "tool_name_here",
-        "arguments": {
-            "param1": "value1",
-            "param2": "value2"
-        }
+  "jsonrpc": "2.0",
+  "id": 1,
+  "method": "tools/call",
+  "params": {
+    "name": "tool_name_here",
+    "arguments": {
+      "param1": "value1",
+      "param2": "value2"
     }
+  }
 }
 ```
 
 **⚠️ CRITICAL:** All requests MUST include `jsonrpc: "2.0"` and `id` fields or you'll get 400 errors!
 
 ### Example: List Events
+
 ```bash
 curl -X POST https://your-server.onrender.com/mcp \
   -H "Content-Type: application/json" \
@@ -262,10 +309,11 @@ curl -X POST https://your-server.onrender.com/mcp \
 ```
 
 ### Response Format
+
 The server responds with **Server-Sent Events** format:
+
 ```
 data: {"jsonrpc": "2.0", "id": 1, "result": {"success": true, "events": [...]}}
 ```
 
-**⚠️  IMPORTANT:** The response body is prefixed with `data: ` - AI agents must parse this correctly!
-
+**⚠️ IMPORTANT:** The response body is prefixed with `data: ` - AI agents must parse this correctly!
